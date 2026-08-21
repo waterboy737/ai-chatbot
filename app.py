@@ -1,11 +1,13 @@
-from flask import Flask, render_template, request, jsonify
 import os
 from dotenv import load_dotenv
+
+# Load .env early so provider modules that read env at import time see values
+load_dotenv()
+
+from flask import Flask, render_template, request, jsonify
 import providers.llm as llm_provider
 import providers.embeddings as emb_provider
 from vector_store import VectorStore
-
-load_dotenv()
 
 app = Flask(__name__, template_folder='templates')
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'dev')
@@ -23,8 +25,15 @@ def chat():
     message = data.get('message', '')
     history = data.get('history', [])
 
+    if not message or not message.strip():
+        return jsonify({"error": "empty message"}), 400
+
     # Basic RAG flow: find top-k docs, send with prompt to LLM
-    query_embedding = emb_provider.get_embedding(message)
+    try:
+        query_embedding = emb_provider.get_embedding(message)
+    except Exception as e:
+        return jsonify({"error": f"embedding error: {e}"}), 500
+
     docs = vs.search(query_embedding, top_k=4)
 
     context_text = "\n\n".join([f"Source: {d['meta'].get('source','unknown')}\n{d['text']}" for d in docs])
@@ -35,7 +44,10 @@ def chat():
     )
 
     # Call LLM provider
-    llm_reply = llm_provider.generate(prompt)
+    try:
+        llm_reply = llm_provider.generate(prompt)
+    except Exception as e:
+        return jsonify({"error": f"LLM provider error: {e}"}), 500
 
     return jsonify({"reply": llm_reply})
 
