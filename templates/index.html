@@ -9,12 +9,18 @@
     .msg { margin: 8px 0; }
     .user { color: #0b61a4; }
     .assistant { color: #1a7a1a; }
+    .error { color: #a12a2a; }
     #inputRow { margin-top: 12px; display:flex; gap:8px; }
     textarea { flex: 1; resize: vertical; }
+    #topBar { display:flex; gap:12px; align-items:center; margin-bottom:12px; }
   </style>
 </head>
 <body>
-  <h1>AI Chatbot</h1>
+  <div id="topBar">
+    <h1 style="margin:0">AI Chatbot</h1>
+    <button id="downloadRepo">Download Repo</button>
+  </div>
+
   <div id="chat"></div>
   <div id="inputRow">
     <textarea id="message" rows="2" placeholder="Type your message..."></textarea>
@@ -25,12 +31,14 @@
     const chatEl = document.getElementById('chat');
     const msgInput = document.getElementById('message');
     const sendBtn = document.getElementById('send');
+    const downloadBtn = document.getElementById('downloadRepo');
 
     const history = [];
 
-    function addMessage(role, text) {
+    function addMessage(role, text, isError=false) {
       const d = document.createElement('div');
       d.className = 'msg ' + (role === 'user' ? 'user' : 'assistant');
+      if (isError) d.classList.add('error');
       d.innerHTML = '<strong>' + (role === 'user' ? 'You' : 'Assistant') + ':</strong> ' + text;
       chatEl.appendChild(d);
       chatEl.scrollTop = chatEl.scrollHeight;
@@ -50,13 +58,43 @@
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({message: text, history})
         });
-        const data = await res.json();
-        addMessage('assistant', data.reply);
-        history.push({role: 'assistant', content: data.reply});
+        const data = await res.json().catch(() => ({ error: 'Invalid JSON response from server' }));
+        if (res.ok && data.reply) {
+          addMessage('assistant', data.reply);
+          history.push({role: 'assistant', content: data.reply});
+        } else {
+          const errMsg = data.error || `Server returned status ${res.status}`;
+          addMessage('assistant', errMsg, true);
+        }
       } catch (err) {
-        addMessage('assistant', 'Error: ' + err.message);
+        addMessage('assistant', 'Network error: ' + err.message, true);
       } finally {
         sendBtn.disabled = false;
+      }
+    }
+
+    async function downloadRepoZip() {
+      const url = 'https://github.com/waterboy737/ai-chatbot/archive/refs/heads/main.zip';
+      downloadBtn.disabled = true;
+      downloadBtn.textContent = 'Downloading...';
+      try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('Failed to fetch archive: ' + res.status);
+        const blob = await res.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = 'ai-chatbot-main.zip';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(blobUrl);
+        addMessage('assistant', 'Download started: ai-chatbot-main.zip');
+      } catch (err) {
+        addMessage('assistant', 'Error downloading repo: ' + err.message, true);
+      } finally {
+        downloadBtn.disabled = false;
+        downloadBtn.textContent = 'Download Repo';
       }
     }
 
@@ -67,6 +105,8 @@
         sendMessage();
       }
     });
+
+    downloadBtn.addEventListener('click', downloadRepoZip);
   </script>
 </body>
 </html>
